@@ -24,8 +24,11 @@ impl Tray {
         Self { icon, toggle }
     }
     
-    pub fn update(&self) -> TrayUpdate {
-        // let window = frame.winit_window().unwrap();
+    pub fn update(&self, running: bool) -> TrayUpdate {
+        let _ = self.icon.set_tooltip(Some(
+            if running { "Running" } else { "Not running" }.to_owned()
+        ));
+
         if let Ok(event) = TrayIconEvent::receiver().try_recv() {
             match &event {
                 TrayIconEvent::Click { button_state: MouseButtonState::Down, .. } => {

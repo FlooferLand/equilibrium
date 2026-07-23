@@ -43,6 +43,12 @@ impl App {
         std::thread::spawn(move || midi_thread_main(thread_send, app_recv));
         (app_send, thread_recv)
     }
+
+    pub fn midi_thread_running(&self) -> bool {
+        self.midi_last_contact.elapsed()
+            .unwrap_or(Duration::from_millis(midi::SLEEP_TIME_MILLIS)).as_millis()
+            < midi::SLEEP_TIME_MILLIS as u128 * 2
+    }
 }
 
 impl eframe::App for App {
@@ -72,11 +78,9 @@ impl eframe::App for App {
         self.osd_lines.retain(|_, err| !err.is_expired());
 
         // Tray icon
-        match self.tray.update() {
+        let running = self.midi_thread_running();
+        match self.tray.update(running) {
             tray::TrayUpdate::MidiThreadToggle => {
-                let running = self.midi_last_contact.elapsed()
-                    .unwrap_or(Duration::from_millis(midi::SLEEP_TIME_MILLIS)).as_millis()
-                    < midi::SLEEP_TIME_MILLIS as u128 * 2;
                 let should_run = !running;
                 if should_run {
                     self.osd_lines.insert("midi_thread".to_string(), TextLine::new("Starting the thread", LogKind::Info));
@@ -119,7 +123,7 @@ impl eframe::App for App {
                         ui.label(
                             RichText::new(&line.text)
                                 .color(Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), fade))
-                                .background_color(Color32::BLACK)
+                                .background_color(Color32::from_black_alpha((fade as i32 * 2).at_most(255) as u8))
                         );
                     }
                 });
