@@ -6,6 +6,7 @@ mod tray;
 mod text_line;
 
 pub enum AppThreadMessage {
+    AssetReload,
     CloseThread
 }
 
@@ -69,6 +70,10 @@ impl eframe::App for App {
                         let text = format!("Rack '{name}' is {end}");
                         self.osd_lines.insert(name.clone(), TextLine::new(&text, LogKind::Info));
                     }
+                    MidiThreadMessage::SoundPlayed { name } => {
+                        let text = format!("Sound {name}");
+                        self.osd_lines.insert(name.clone(), TextLine::new(&text, LogKind::Info));
+                    }
                     MidiThreadMessage::Ping => {
                         self.midi_last_contact = SystemTime::now()
                     }
@@ -94,6 +99,12 @@ impl eframe::App for App {
                     }
                     self.midi_receiver = None;
                     self.midi_sender = None;
+                }
+            },
+            tray::TrayUpdate::AssetReload => {
+                self.osd_lines.insert("reload".to_string(), TextLine::new("Hot-reloading assets..", LogKind::Info));
+                if let Some(s) = &self.midi_sender {
+                    let _ = s.send(AppThreadMessage::AssetReload);
                 }
             },
             tray::TrayUpdate::None => {},

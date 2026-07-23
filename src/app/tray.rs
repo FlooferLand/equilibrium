@@ -1,7 +1,8 @@
-use tray_icon::{MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent, menu::CheckMenuItem};
+use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent, menu::CheckMenuItem};
 
 pub enum TrayUpdate {
     MidiThreadToggle,
+    AssetReload,
     None
 }
 
@@ -17,7 +18,7 @@ impl Tray {
     pub fn new() -> Self {
         let toggle = CheckMenuItem::new("Running", true, true, None);
         let icon = TrayIconBuilder::new()
-            .with_icon(Self::load_icon())
+            .with_icon(Self::load_icon("open"))
             .build()
             .unwrap();
 
@@ -28,11 +29,17 @@ impl Tray {
         let _ = self.icon.set_tooltip(Some(
             if running { "Running" } else { "Not running" }.to_owned()
         ));
+        let _ = self.icon.set_icon(Some(
+            Self::load_icon(if running { "open" } else { "closed" })
+        ));
 
         if let Ok(event) = TrayIconEvent::receiver().try_recv() {
             match &event {
-                TrayIconEvent::Click { button_state: MouseButtonState::Down, .. } => {
+                TrayIconEvent::Click { button_state: MouseButtonState::Down, button: MouseButton::Left, .. } => {
                     return TrayUpdate::MidiThreadToggle
+                },
+                TrayIconEvent::Click { button_state: MouseButtonState::Down, button: MouseButton::Right, .. } => {
+                    return TrayUpdate::AssetReload
                 },
                 _ => {},
             }
@@ -40,8 +47,8 @@ impl Tray {
         TrayUpdate::None
     }
     
-    fn load_icon() -> tray_icon::Icon {
-        let path = "./data/icon.png";
+    fn load_icon(icon: &str) -> tray_icon::Icon {
+        let path = format!("./assets/icon_{icon}.png");
         let (icon_rgba, icon_width, icon_height) = {
             let image = image::open(path)
                 .expect("Failed to open icon path")

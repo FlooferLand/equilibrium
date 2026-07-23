@@ -2,4 +2,4 @@ mod rack;
 mod keymap;
 
 pub use rack::RackFile;
-pub use keymap::Keymap;
+pub use keymap::{Keymap, IncludeData};

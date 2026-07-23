@@ -1,13 +1,14 @@
-use std::path::{Path, PathBuf};
-
-use anyhow::Context;
+use anyhow::{Context, bail};
 use wmidi::{Channel, MidiMessage, Note, U7};
 
-use crate::types::RackFile;
-
+pub enum IncludeData {
+    Rack(String),
+    Sound(String)
+}
+ 
 pub struct IncludeEntry {
     pub message: MidiMessage<'static>,
-    pub path: PathBuf
+    pub data: IncludeData
 }
 
 pub struct Keymap {
@@ -21,26 +22,30 @@ impl Keymap {
         for line in text.lines() {
             let line = line.trim();
             if line.is_empty() { continue }
-            
-            let (message, name) = Self::parse_line(line)?;
-            let path = Path::new(&RackFile::get_custom_dir()).to_path_buf().join(name).with_extension("txt");
-            entries.push(IncludeEntry { message, path });
+            entries.push(Self::parse_line(line)?);
         }
         Ok(Self { entries })
     }
 
-    fn parse_line<'a>(line: &str) -> anyhow::Result<(MidiMessage<'a>, String)> {
-        let (message, name) = line.split_once(' ').context("Expected ' '")?;
+    fn parse_line<'a>(line: &str) -> anyhow::Result<IncludeEntry> {
+        let line = line.split(' ').collect::<Vec<&str>>();
+        if line.len() < 3 { bail!("A keymap line needs 3 sections") }
+        let (message, kind, name) = (line[0], line[1], line[2].to_owned());
         let (channel, note) = message.split_once(':').context("Expected ':'")?;
-        let name = name.to_owned();
 
         let channel = channel.parse::<u8>().context("Channel should be a number")?;
         let note = note.parse::<u8>().context("Note should be a number")?;
-        
+
         let channel = Channel::from_index(channel).context("Failed to parse MIDI channel")?;
         let note = Note::from_u8_lossy(note);
         let message = MidiMessage::NoteOn(channel, note, U7::default());
+
+        let data = match kind {
+            "rack" => IncludeData::Rack(name.clone()),
+            "sound" => IncludeData::Sound(name.clone()),
+            _ => bail!("Unrecognized keymap type '{kind}'")
+        };
         
-        Ok((message, name))
+        Ok(IncludeEntry { message, data })
     }
 }

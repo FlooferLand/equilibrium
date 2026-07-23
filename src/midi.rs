@@ -1,10 +1,11 @@
-use std::{sync::{mpsc::{Receiver, Sender}}, time::Duration};
+use std::{path::Path, sync::mpsc::{Receiver, Sender}, time::Duration};
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow, bail};
+use kira::{AudioManager, AudioManagerSettings, DefaultBackend, backend::cpal::{CpalBackendSettings, cpal::{self, traits::*}}, sound::static_sound::StaticSoundData};
 use midir::MidiInput;
 use wmidi::MidiMessage;
 
-use crate::{LogKind, app::AppThreadMessage, types::{Keymap, RackFile}};
+use crate::{LogKind, app::AppThreadMessage, types::{IncludeData, Keymap, RackFile}};
 
 pub struct LogMessage { pub text: String, pub kind: LogKind }
 impl LogMessage {
@@ -15,6 +16,7 @@ impl LogMessage {
 pub enum MidiThreadMessage {
     Log(LogMessage),
     IncludeChanged { name: String, enabled: bool },
+    SoundPlayed { name: String },
     Ping
 }
 
@@ -23,10 +25,63 @@ const DEBUG: bool = false;
 
 pub struct Instance {
     sender: Sender<MidiThreadMessage>,
-    keymap: Option<Keymap>
+    keymap: Option<Keymap>,
+    audio_manager: AudioManager
 }
 impl Instance {
-    fn on_message(&self, _stamp: u64, message: MidiMessage) -> anyhow::Result<()> {
+    fn new(sender: Sender<MidiThreadMessage>) -> anyhow::Result<Self> {
+        // Audio
+        let host = cpal::default_host();
+        let device = match Self::find_audio_device(&host) {
+            Ok(device) => {
+                println!("Found selected device '{device}'");
+                device
+            },
+            Err(err) => {
+                let device = host.default_output_device().unwrap();
+                println!("Picking default device '{device}'. Info: {err}");
+                device
+            },
+        };
+        let settings = AudioManagerSettings {
+            backend_settings: CpalBackendSettings {
+                device: Some(device),
+                .. Default::default()
+            },
+            .. Default::default()
+        };
+        let audio_manager = AudioManager::<DefaultBackend>::new(settings)?;
+        
+        // Setup
+        Ok(Self {
+            sender,
+            keymap: None,
+            audio_manager
+        })
+    }
+
+    fn find_audio_device(host: &cpal::Host) -> anyhow::Result<cpal::Device> {
+        let device_name = std::fs::read_to_string("./data/device.txt").ok()
+            .map(|text| text.trim().to_string());
+
+        match device_name {
+            Some(name) => {
+                let device = host.output_devices()?
+                    .find(|d| {
+                        d.description()
+                            .ok()
+                            .map(|desc| desc.name().contains(&name))
+                            .unwrap_or(false)
+                    }).context("No soundboard audio device found")?;
+                Ok(device)
+            },
+            None => {
+                bail!("No device file found. You can make a device.txt inside the data folder to specify the soundboard audio device");
+            },
+        }
+    }
+
+    fn on_message(&mut self, _stamp: u64, message: MidiMessage) -> anyhow::Result<()> {
         let Some(keymap) = &self.keymap else { return Err(anyhow!("Missing keymap")) };
         let MidiMessage::NoteOn(channel, note, _) = message else { return Ok(()) };
         let Some(entry) = keymap.entries.iter().filter_map(|e|
@@ -37,12 +92,22 @@ impl Instance {
             }
         ).nth(0) else { return Ok(()) };
         
-        let mut rack = RackFile::load()?;
-        let enabled = rack.toggle_include(entry.path.clone())?;
-        rack.save()?;
+        match &entry.data {
+            IncludeData::Rack(name) => {
+                let path = Path::new(&RackFile::get_custom_dir()).to_path_buf().join(&name).with_extension("txt");
+                let mut rack = RackFile::load()?;
+                let enabled = rack.toggle_include(path.clone())?;
+                rack.save()?;
 
-        let name = entry.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or(entry.path.display().to_string());
-        let _ = self.sender.send(MidiThreadMessage::IncludeChanged { name, enabled });
+                let _ = self.sender.send(MidiThreadMessage::IncludeChanged { name: name.to_owned(), enabled });
+            }
+            IncludeData::Sound(name) => {
+                let path = Path::new("./data/sounds/").to_path_buf().join(&name);
+                let sound = StaticSoundData::from_file(path)?;
+                let _ = self.audio_manager.play(sound);
+                let _ = self.sender.send(MidiThreadMessage::SoundPlayed { name: name.to_owned() });
+            },
+        }
         Ok(())
     }
     fn on_message_debug(&self, _stamp: u64, message: MidiMessage) {
@@ -71,10 +136,7 @@ pub fn midi_thread_main(sender: Sender<MidiThreadMessage>, receiver: Receiver<Ap
     
     LogMessage::send(&sender, format!("Found port '{}'", port.id()), LogKind::Info);
 
-    let mut instance = Instance {
-        sender: sender.clone(),
-        keymap: None
-    };
+    let mut instance = Instance::new(sender.clone()).unwrap();
     instance.load_keymap();
     let connection = input.connect(port, "equilibrium_read", move |stamp, message, instance| {
         match wmidi::MidiMessage::from_bytes(message) {
@@ -100,6 +162,9 @@ pub fn midi_thread_main(sender: Sender<MidiThreadMessage>, receiver: Receiver<Ap
                     drop(connection);
                     return;
                 }
+                AppThreadMessage::AssetReload => {
+                    LogMessage::send(&sender, "MIDI thread should be restarted for some changes".to_string(), LogKind::Info);
+                },
             };
         }
         
