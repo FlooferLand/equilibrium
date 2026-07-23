@@ -1,4 +1,4 @@
-use std::{sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::{Receiver, Sender}}, time::Duration};
+use std::{sync::{mpsc::{Receiver, Sender}}, time::Duration};
 
 use anyhow::anyhow;
 use midir::MidiInput;

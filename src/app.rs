@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::{Receiver, Sender, channel}}, time::{Duration, SystemTime}};
+use std::{collections::HashMap, sync::{mpsc::{Receiver, Sender, channel}}, time::{Duration, SystemTime}};
 use eframe::{CreationContext, egui::{self, *}};
 use crate::{LogKind, app::{text_line::TextLine, tray::Tray}, midi::{self, MidiThreadMessage, midi_thread_main}, platform};
 
@@ -50,7 +50,7 @@ impl eframe::App for App {
         egui::Rgba::TRANSPARENT.to_array()
     }
 
-    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // OSD lines
         if let Some(midi_receiver) = &self.midi_receiver {
             while let Ok(message) = &midi_receiver.try_recv() {
@@ -114,11 +114,12 @@ impl eframe::App for App {
                         let color = match &line.kind {
                             LogKind::Info => Color32::WHITE,
                             LogKind::Warning => Color32::LIGHT_YELLOW,
-                            LogKind::Error => Color32::DARK_RED,
+                            LogKind::Error => Color32::DARK_RED
                         };
                         ui.label(
                             RichText::new(&line.text)
                                 .color(Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), fade))
+                                .background_color(Color32::BLACK)
                         );
                     }
                 });

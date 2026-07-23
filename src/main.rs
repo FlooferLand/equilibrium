@@ -1,9 +1,6 @@
 #![allow(dead_code)]
-use std::{cell::RefCell, rc::Rc};
 
 use eframe::egui::{Pos2, Vec2, ViewportBuilder, WindowLevel};
-use tray_icon::TrayIconBuilder;
-
 use crate::app::App;
 
 mod platform;

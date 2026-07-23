@@ -1,4 +1,4 @@
-use tray_icon::{MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent, menu::{CheckMenuItem, MenuEvent}};
+use tray_icon::{MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent, menu::CheckMenuItem};
 
 pub enum TrayUpdate {
     MidiThreadToggle,
