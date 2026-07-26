@@ -142,7 +142,9 @@ impl eframe::App for App {
                                 .background_color(Color32::BLACK)
                         );
                     }
-                    ui.separator();
+                    if !self.lines.is_empty() {
+                        ui.add_space(16.0);
+                    }
 
                     // Temporary prints
                     for line in self.temp_lines.values() {
