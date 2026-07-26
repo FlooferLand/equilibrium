@@ -13,7 +13,7 @@ impl LogMessage {
 pub enum MidiThreadMessage {
     Log(LogMessage),
     UpdateRack { path: PathBuf, enabled: bool, in_keymap: bool },
-    SoundPlayed { name: String },
+    UpdateSound { name: String, played: bool },
     Ping
 }
 

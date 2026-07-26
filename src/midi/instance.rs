@@ -106,12 +106,8 @@ impl Instance {
                 let path = Path::new("./data/sounds/").to_path_buf().join(&name);
                 let tween = Tween { duration: Duration::from_secs_f32(0.1), .. Default::default() };
 
-                if let Some(handles) = self.sounds.get_mut(name) && velocity < 60 {
-                    for handle in handles {
-                        handle.act(|h| h.stop(tween));
-                    }
-                    self.sounds.remove(name);
-                } else {
+                let played;
+                if velocity > 60 {
                     let sound = StaticSoundData::from_file(path)?;
                     let out = self.audio_out.play(sound.clone())?;
                     let monitor = self.audio_monitor.play(sound)?;
@@ -121,9 +117,18 @@ impl Instance {
                     } else {
                         self.sounds.insert(name.to_owned(), vec![handle]);
                     }
+                    played = true;
+                } else {
+                    if let Some(handles) = self.sounds.get_mut(name) {
+                        for handle in handles {
+                            handle.act(|h| h.stop(tween));
+                        }
+                        self.sounds.remove(name);
+                    }
+                    played = false;
                 }
 
-                let _ = self.sender.send(MidiThreadMessage::SoundPlayed { name: name.to_owned() });
+                let _ = self.sender.send(MidiThreadMessage::UpdateSound { name: name.to_owned(), played });
             },
         }
         Ok(())

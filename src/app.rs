@@ -76,8 +76,9 @@ impl eframe::App for App {
                             self.lines.remove(&name);
                         }
                     }
-                    MidiThreadMessage::SoundPlayed { name } => {
-                        let text = format!("Sound {name}");
+                    MidiThreadMessage::UpdateSound { name, played } => {
+                        let action = if *played { "Played" } else { "Stopped" };
+                        let text = format!("{action} sound {name}");
                         self.temp_lines.insert(name.clone(), TextLine::new(&text, LogKind::Info));
                     }
                     MidiThreadMessage::Ping => {
