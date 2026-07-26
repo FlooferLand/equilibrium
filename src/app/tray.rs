@@ -9,6 +9,8 @@ pub enum TrayUpdate {
 // Should run on it's own separate thread
 // Popping up a menu freezes egui for some stupid reason
 
+pub const HINT_TOOLTIP: &str = "LClick=Toggle\nRClick=Reload\nMClick=Quit";
+
 pub struct Tray {
     icon: TrayIcon,
     toggle: CheckMenuItem
@@ -19,6 +21,7 @@ impl Tray {
         let toggle = CheckMenuItem::new("Running", true, true, None);
         let icon = TrayIconBuilder::new()
             .with_icon(Self::load_icon("open"))
+            .with_tooltip(HINT_TOOLTIP)
             .build()
             .unwrap();
 
@@ -26,8 +29,9 @@ impl Tray {
     }
     
     pub fn update(&self, running: bool) -> TrayUpdate {
+        let tooltip = if running { "Running" } else { "Not running" }.to_owned();
         let _ = self.icon.set_tooltip(Some(
-            if running { "Running" } else { "Not running" }.to_owned()
+            format!("{tooltip}\n{HINT_TOOLTIP}")    
         ));
         let _ = self.icon.set_icon(Some(
             Self::load_icon(if running { "open" } else { "closed" })
@@ -40,6 +44,9 @@ impl Tray {
                 },
                 TrayIconEvent::Click { button_state: MouseButtonState::Down, button: MouseButton::Right, .. } => {
                     return TrayUpdate::AssetReload
+                },
+                TrayIconEvent::Click { button_state: MouseButtonState::Down, button: MouseButton::Middle, .. } => {
+                    std::process::exit(0);
                 },
                 _ => {},
             }

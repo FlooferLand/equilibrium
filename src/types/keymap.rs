@@ -1,16 +1,19 @@
 use anyhow::{Context, bail};
 use wmidi::{Channel, MidiMessage, Note, U7};
 
+#[derive(Clone)]
 pub enum IncludeData {
     Rack(String),
     Sound(String)
 }
  
+#[derive(Clone)]
 pub struct IncludeEntry {
     pub message: MidiMessage<'static>,
     pub data: IncludeData
 }
 
+#[derive(Clone)]
 pub struct Keymap {
     pub entries: Vec<IncludeEntry>
 }

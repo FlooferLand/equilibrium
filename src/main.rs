@@ -1,10 +1,12 @@
 #![allow(dead_code)]
+#![windows_subsystem = "windows"]
 
 use eframe::egui::{Pos2, Vec2, ViewportBuilder, WindowLevel};
 use crate::app::App;
 
 mod platform;
 mod types;
+mod util;
 mod midi;
 mod app;
 
@@ -16,6 +18,7 @@ pub enum LogKind {
 }
 
 fn main() -> eframe::Result<()> {
+    platform::init();
     env_logger::builder().init();
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()

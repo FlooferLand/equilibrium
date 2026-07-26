@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, sync::mpsc::Sender};
+
+use crate::{midi::MidiThreadMessage, types::{IncludeData, Keymap}};
 
 enum CommandData {
     Device(String),
@@ -113,5 +115,29 @@ impl RackFile {
             }
         }
         Ok(enabled)
+    }
+    
+    pub fn update_visual(&mut self, keymap: &Option<Keymap>, sender: &mut Sender<MidiThreadMessage>) -> anyhow::Result<()> {
+        for statement in self.statements.iter_mut() {
+            let Statement::Command(command) = statement else { continue };
+            if let CommandData::Include(path) = &command.data {
+                let in_keymap = keymap.clone().map(|keymap|
+                    keymap.entries.iter()
+                        .any(|e|
+                            if let IncludeData::Rack(name) = &e.data {
+                                *path == Self::build_path(name)
+                            } else {
+                                false
+                            }
+                        )
+                ).unwrap_or(false);
+                sender.send(MidiThreadMessage::UpdateRack { path: path.to_owned(), enabled: command.enabled, in_keymap })?;
+            }
+        }
+        Ok(())
+    }
+    
+    pub fn build_path(name: &str) -> PathBuf {
+        Path::new(&Self::get_custom_dir()).to_path_buf().join(&name).with_extension("txt")
     }
 }

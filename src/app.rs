@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::{mpsc::{Receiver, Sender, channel}}, time::{Duration, SystemTime}};
 use eframe::{CreationContext, egui::{self, *}};
-use crate::{LogKind, app::{text_line::TextLine, tray::Tray}, midi::{self, MidiThreadMessage, midi_thread_main}, platform};
+use crate::{LogKind, app::{text_line::TextLine, tray::Tray}, midi::{self, MidiThreadMessage, midi_thread_main}, platform, util::FileNameOrPathTrait};
 
 mod tray;
 mod text_line;
@@ -14,13 +14,14 @@ pub struct App {
     midi_receiver: Option<Receiver<MidiThreadMessage>>,
     midi_sender: Option<Sender<AppThreadMessage>>,
     midi_last_contact: SystemTime,
-    osd_lines: HashMap<String, TextLine>,
+    temp_lines: HashMap<String, TextLine>,
+    lines: HashMap<String, TextLine>,
     tray: Tray
 }
 
 impl App {
     pub fn new(cc: &CreationContext) -> Self {
-        cc.egui_ctx.set_pixels_per_point(2.0);
+        cc.egui_ctx.set_pixels_per_point(1.0);
 
         let mut visuals = egui::Visuals::dark();
         visuals.panel_fill = Color32::TRANSPARENT;
@@ -33,7 +34,8 @@ impl App {
             midi_receiver: Some(thread_recv),
             midi_sender: Some(app_send),
             midi_last_contact: SystemTime::now(),
-            osd_lines: HashMap::new(),
+            temp_lines: HashMap::new(),
+            lines: HashMap::new(),
             tray: Tray::new()
         }
     }
@@ -63,16 +65,20 @@ impl eframe::App for App {
             while let Ok(message) = &midi_receiver.try_recv() {
                 match message {
                     MidiThreadMessage::Log(line) => {
-                        self.osd_lines.insert(line.text.clone(), TextLine::new(&line.text, line.kind.clone()));
+                        self.temp_lines.insert(line.text.clone(), TextLine::new(&line.text, line.kind.clone()));
                     }
-                    MidiThreadMessage::IncludeChanged { name, enabled } => {
-                        let end = if *enabled { "on" } else { "off" };
-                        let text = format!("Rack '{name}' is {end}");
-                        self.osd_lines.insert(name.clone(), TextLine::new(&text, LogKind::Info));
+                    MidiThreadMessage::UpdateRack { path, enabled, in_keymap } => {
+                        let name = path.file_name_safe().to_owned();
+                        if *enabled && *in_keymap {
+                            let text = format!("Rack '{name}'");
+                            self.lines.insert(name, TextLine::new(&text, LogKind::Info));
+                        } else {
+                            self.lines.remove(&name);
+                        }
                     }
                     MidiThreadMessage::SoundPlayed { name } => {
                         let text = format!("Sound {name}");
-                        self.osd_lines.insert(name.clone(), TextLine::new(&text, LogKind::Info));
+                        self.temp_lines.insert(name.clone(), TextLine::new(&text, LogKind::Info));
                     }
                     MidiThreadMessage::Ping => {
                         self.midi_last_contact = SystemTime::now()
@@ -80,7 +86,7 @@ impl eframe::App for App {
                 }
             }
         }
-        self.osd_lines.retain(|_, err| !err.is_expired());
+        self.temp_lines.retain(|_, line| !line.is_expired());
 
         // Tray icon
         let running = self.midi_thread_running();
@@ -88,21 +94,21 @@ impl eframe::App for App {
             tray::TrayUpdate::MidiThreadToggle => {
                 let should_run = !running;
                 if should_run {
-                    self.osd_lines.insert("midi_thread".to_string(), TextLine::new("Starting the thread", LogKind::Info));
+                    self.temp_lines.insert("midi_thread".to_string(), TextLine::new("Starting the thread", LogKind::Info));
                     let (app_send, thread_recv) = Self::start_midi_thread();
                     self.midi_receiver = Some(thread_recv);
                     self.midi_sender = Some(app_send);
                 } else {
                     if let Some(s) = &self.midi_sender {
                         let _ = s.send(AppThreadMessage::CloseThread);
-                        self.osd_lines.insert("midi_thread".to_string(), TextLine::new("Closing the thread", LogKind::Info));
+                        self.temp_lines.insert("midi_thread".to_string(), TextLine::new("Closing the thread", LogKind::Info));
                     }
                     self.midi_receiver = None;
                     self.midi_sender = None;
                 }
             },
             tray::TrayUpdate::AssetReload => {
-                self.osd_lines.insert("reload".to_string(), TextLine::new("Hot-reloading assets..", LogKind::Info));
+                self.temp_lines.insert("reload".to_string(), TextLine::new("Hot-reloading assets..", LogKind::Info));
                 if let Some(s) = &self.midi_sender {
                     let _ = s.send(AppThreadMessage::AssetReload);
                 }
@@ -115,7 +121,7 @@ impl eframe::App for App {
         platform::fix_mouse_passthrough(frame); // TODO: Make this only be called once
 
         // UI
-        if self.osd_lines.is_empty() {
+        if self.lines.is_empty() && self.temp_lines.is_empty() {
             ui.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             return
         }
@@ -123,7 +129,23 @@ impl eframe::App for App {
         CentralPanel::default().show(ui, |ui| {
             ui.vertical(|ui| {
                 Frame::group(ui.style()).fill(Color32::TRANSPARENT).stroke(Stroke::NONE).show(ui, |ui| {
-                    for line in self.osd_lines.values() {
+                    // Static prints
+                    for line in self.lines.values() {
+                        let color = match &line.kind {
+                            LogKind::Info => Color32::WHITE,
+                            LogKind::Warning => Color32::LIGHT_YELLOW,
+                            LogKind::Error => Color32::DARK_RED
+                        };
+                        ui.label(
+                            RichText::new(&line.text)
+                                .color(color)
+                                .background_color(Color32::BLACK)
+                        );
+                    }
+                    ui.separator();
+
+                    // Temporary prints
+                    for line in self.temp_lines.values() {
                         let fade = (line.get_fade() * 255f32) as i32;
                         let fade = fade.at_least(0).at_most(255) as u8;
                         let color = match &line.kind {
